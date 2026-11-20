@@ -2,6 +2,8 @@ package com.ima.qqmusiclite;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ContentValues;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Typeface;
@@ -9,9 +11,13 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.MediaStore;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -31,7 +37,11 @@ import android.widget.SimpleAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
@@ -63,6 +73,7 @@ public class MainActivity extends Activity {
     private TextView nowTitle, nowArtist, timeLabel;
     private SeekBar seek;
     private Button playBtn;
+    private Button downloadBtn;
 
     private MediaPlayer player;
     private Song current;
@@ -289,6 +300,22 @@ public class MainActivity extends Activity {
         playBtn.setBackground(round(ACCENT, 24, 0, 0));
         playBtn.setOnClickListener(v -> togglePlay());
         top.addView(playBtn, new LinearLayout.LayoutParams(dp(46), dp(46)));
+
+        downloadBtn = new Button(this);
+        downloadBtn.setText("↓");
+        downloadBtn.setTextSize(20);
+        downloadBtn.setTextColor(0xFFFFFFFF);
+        downloadBtn.setAllCaps(false);
+        downloadBtn.setMinHeight(0);
+        downloadBtn.setMinimumHeight(0);
+        downloadBtn.setMinWidth(0);
+        downloadBtn.setMinimumWidth(0);
+        downloadBtn.setPadding(0, 0, 0, 0);
+        downloadBtn.setBackground(round(0xFF4A90E2, 23, 0, 0));
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(42), dp(42));
+        dlp.leftMargin = dp(6);
+        downloadBtn.setOnClickListener(v -> downloadCurrent());
+        top.addView(downloadBtn, dlp);
 
         bar.addView(top, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -550,6 +577,120 @@ public class MainActivity extends Activity {
             }
             player = null;
         }
+    }
+
+    // endregion
+
+    // region ---------- 下载（仅可播放的免费歌曲） ----------
+
+    /** 只下载当前这首、且官网返回了播放地址的歌曲；VIP/版权歌曲会被拦截 */
+    private void downloadCurrent() {
+        final Song s = current;
+        if (s == null) {
+            toast("请先选择一首歌");
+            return;
+        }
+        toast("正在准备下载…");
+        pool.execute(() -> {
+            String url = null;
+            String err = null;
+            try {
+                url = Api.playUrl(s.mid);
+            } catch (Exception e) {
+                err = msg(e);
+            }
+            final String fUrl = url;
+            final String fErr = err;
+            ui.post(() -> {
+                if (fErr != null) {
+                    toast("获取下载地址失败：" + fErr);
+                } else if (fUrl == null) {
+                    toast("《" + s.name + "》受版权/VIP 限制，无法下载");
+                } else {
+                    saveSong(s, fUrl);
+                }
+            });
+        });
+    }
+
+    private void saveSong(final Song s, final String url) {
+        pool.execute(() -> {
+            String note;
+            try {
+                byte[] data = readAllBytes(url);
+                String name = safeFileName(s.name + " - " + s.singer + ".m4a");
+                boolean ok;
+                if (Build.VERSION.SDK_INT >= 29) {
+                    ContentValues cv = new ContentValues();
+                    cv.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+                    cv.put(MediaStore.MediaColumns.MIME_TYPE, "audio/mp4");
+                    cv.put(MediaStore.MediaColumns.RELATIVE_PATH,
+                            Environment.DIRECTORY_MUSIC + "/QQ音乐轻听");
+                    Uri uri = getContentResolver().insert(
+                            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, cv);
+                    if (uri == null) throw new IOException("无法创建媒体文件");
+                    OutputStream os = getContentResolver().openOutputStream(uri);
+                    if (os == null) throw new IOException("无法写入媒体文件");
+                    os.write(data);
+                    os.flush();
+                    os.close();
+                    ok = true;
+                } else {
+                    if (checkSelfPermission("android.permission.WRITE_EXTERNAL_STORAGE")
+                            != PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(
+                                new String[]{"android.permission.WRITE_EXTERNAL_STORAGE"}, 2001);
+                        return;
+                    }
+                    File dir = new File(Environment.getExternalStoragePublicDirectory(
+                            Environment.DIRECTORY_MUSIC), "QQ音乐轻听");
+                    if (!dir.exists() && !dir.mkdirs()) throw new IOException("无法创建目录");
+                    FileOutputStream fos = new FileOutputStream(new File(dir, name));
+                    fos.write(data);
+                    fos.flush();
+                    fos.close();
+                    ok = true;
+                }
+                note = ok ? ("已保存到 音乐/QQ音乐轻听/" + name) : "保存失败";
+            } catch (Exception e) {
+                note = "下载失败：" + msg(e);
+            }
+            final String n = note;
+            ui.post(() -> toast(n));
+        });
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 2001) {
+            boolean granted = grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            toast(granted ? "已授权，请再点一次下载" : "需要存储权限才能保存歌曲");
+        }
+    }
+
+    private byte[] readAllBytes(String url) throws IOException {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(30000);
+        c.setInstanceFollowRedirects(true);
+        c.setRequestProperty("User-Agent", "Mozilla/5.0");
+        c.setRequestProperty("Referer", "https://y.qq.com/");
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        try (InputStream is = c.getInputStream()) {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = is.read(buf)) > 0) bos.write(buf, 0, n);
+        }
+        return bos.toByteArray();
+    }
+
+    private String safeFileName(String name) {
+        String s = name.replaceAll("[\\\\/:*?\"<>|\\r\\n]", "_");
+        s = s.replaceAll("\\s+", " ").trim();
+        if (s.length() > 120) s = s.substring(0, 120);
+        return s.isEmpty() ? "song.m4a" : s;
     }
 
     // endregion
