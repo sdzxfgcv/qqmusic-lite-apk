@@ -51,9 +51,19 @@
 - 包名：`com.ima.qqmusiclite`
 - 版本：1.0（versionCode 1）
 - minSdk 21 / targetSdk 33 / compileSdk 35
-- 签名：自签名证书（v1 + v2 + v3 校验通过）
+- 签名：**固定自签名证书**（仓库内的 `debug.keystore`），v1 + v2 + v3 校验通过
+- 签名证书 SHA1：`65:9D:D6:C1:70:43:98:EC:15:52:71:0E:6F:D6:B2:E9:D9:BD:56:86`
+- 签名证书 SHA-256：`38:B2:05:FE:27:C5:E8:69:B3:08:1B:1F:12:AF:54:1B:76:E8:1E:9C:FB:70:20:5D:5B:2A:B1:67:4D:20:2A:EF`
 - 文件：`QQMusicLite-v1.0.apk`，45 KB
-- SHA-256：`ea8710e00e5e3f2598a784869cc71407860dcd12c8eb780a91e4528c2853b7a2`
+- APK SHA-256：`ea8710e00e5e3f2598a784869cc71407860dcd12c8eb780a91e4528c2853b7a2`
+
+## 签名一致性（可覆盖安装）
+
+`debug.keystore` 已随源码提交到仓库。无论在本地还是 GitHub Actions 重新构建，
+`build.sh` 都会复用这把固定的钥匙，**签名证书永不变化**，因此新版 APK 可以直接覆盖安装，
+不会出现"签名不一致，请先卸载旧版"的提示。
+
+如需重新生成 APK：本地执行 `bash build.sh`，或在 GitHub 仓库点 `Actions → Build APK → Run workflow`。
 
 源码目录：`/sandbox/workspace/qqmusic-app/`
 - `AndroidManifest.xml`
