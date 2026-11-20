@@ -27,8 +27,15 @@ jobs:
             https://dl.google.com/dl/android/maven2/com/android/tools/r8/9.5.33/r8-9.5.33.jar
           echo "R8_JAR=$GITHUB_WORKSPACE/r8.jar" >> "$GITHUB_ENV"
 
-      - name: 构建
+      - name: 构建（使用仓库内固定的 debug.keystore）
         run: bash build.sh
+
+      - name: 校验签名证书指纹
+        run: |
+          echo "keystore 指纹："
+          keytool -list -v -keystore debug.keystore -alias qqmusic -storepass android | grep -E 'SHA1|SHA256'
+          echo "APK 签名指纹："
+          keytool -printcert -jarfile output/QQMusicLite-v1.0.apk | grep -E 'SHA1|SHA256'
 
       - name: 上传 APK
         uses: actions/upload-artifact@v4
