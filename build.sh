@@ -49,8 +49,8 @@ fi
 "$BT/apksigner" sign --ks debug.keystore --ks-pass pass:android \
   --key-pass pass:android --ks-key-alias qqmusic \
   --v1-signing-enabled true --v2-signing-enabled true \
-  --out output/QQMusicLite-v1.0.apk build/aligned.apk
+  --out output/QQMusicLite-v1.1.apk build/aligned.apk
 
 echo "[6/6] 验证"
-"$BT/apksigner" verify output/QQMusicLite-v1.0.apk
-ls -lh output/QQMusicLite-v1.0.apk
+"$BT/apksigner" verify output/QQMusicLite-v1.1.apk
+ls -lh output/QQMusicLite-v1.1.apk
